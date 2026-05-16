@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Plant Disease Detection</title>
+
+    <!-- Bootstrap -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+.chat-box {
+    height: 300px;
+    overflow-y: auto;
+    background: #e5ddd5;
+    padding: 10px;
+    border-radius: 10px;
+}
+
+/* Message container */
+.message {
+    display: flex;
+    margin-bottom: 10px;
+}
+
+/* User message (right side) */
+.user {
+    justify-content: flex-end;
+}
+
+/* AI message (left side) */
+.ai {
+    justify-content: flex-start;
+}
+
+/* Bubble style */
+.bubble {
+    max-width: 70%;
+    padding: 10px 14px;
+    border-radius: 15px;
+    font-size: 14px;
+}
+
+/* User bubble */
+.user .bubble {
+    background: #dcf8c6;
+    border-bottom-right-radius: 2px;
+}
+
+/* AI bubble */
+.ai .bubble {
+    background: white;
+    border-bottom-left-radius: 2px;
+}
+
+/* Timestamp */
+.time {
+    font-size: 10px;
+    color: gray;
+    margin-top: 3px;
+    text-align: right;
+}
+</style>
+</head>
+
+<body class="bg-light">
+
+<div class="container mt-5">
+
+    <h2 class="text-center mb-4">🌿 Plant Disease Detection</h2>
+
+    <div class="card p-4 shadow">
+
+        <!-- Image Upload -->
+        <input type="file" id="imageInput" class="form-control mb-3">
+       <img id="preview"
+     class="img-fluid mt-3 d-block mx-auto"
+     style="max-height:200px; max-width:200px; display:none; border-radius:10px;">
+
+        <!-- Predict Button -->
+        <button class="btn btn-success w-100" onclick="predict()">Predict</button>
+
+        <!-- Result -->
+        <div class="mt-4 text-center">
+            <h4 id="result"></h4>
+        </div>
+
+       <div class="row mt-4">
+
+    <!-- LEFT SIDE (CHAT) -->
+    <div class="col-md-8">
+        <h5>🤖 Ask AI about your plant</h5>
+
+        <!-- Chat Box -->
+        <div id="chatBox" class="chat-box"></div>
+
+        <select id="languageSelect" class="form-select mb-2">
+            <option value="en">English</option>
+            <option value="kn">Kannada</option>
+        </select>
+
+        <!-- Input -->
+        <div class="d-flex">
+            <input type="text" id="userInput"
+                   class="form-control me-2"
+                   placeholder="Ask something about the disease...">
+
+            <button class="btn btn-secondary me-2" onclick="startVoice()">🎤</button>
+
+            <button class="btn btn-success me-2" onclick="toggleSpeak()" id="speakToggle">
+                🔊 ON
+            </button>
+
+            <button class="btn btn-outline-primary me-2" onclick="playLast()">▶️</button>
+            <button class="btn btn-outline-danger me-2" onclick="stopSpeak()">⏹️</button>
+
+            <button class="btn btn-primary" onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <!-- RIGHT SIDE (SENSORS) -->
+    <div class="col-md-4">
+        <div class="card p-3 shadow-sm">
+            <h5 class="text-center">🌡️ Live Sensor Data</h5>
+
+            <div class="mt-3">
+                <div class="mb-3">
+                    <b>🌱 Soil Moisture</b>
+                    <div id="soilVal">0</div>
+                </div>
+
+                <div class="mb-3">
+                    <b>🌡 Temperature</b>
+                    <div id="tempVal">0 °C</div>
+                </div>
+
+                <div class="mb-3">
+                    <b>💧 Humidity</b>
+                    <div id="humVal">0 %</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+    <div class="mt-4">
+    <h5>🤖 Ask AI about your plant</h5>
+
+    </div>
+
+</div>
+
+<script>
+let detectedDisease = "";
+let speakEnabled = true;
+let lastResponse = "";
+
+
+let userLocation = { lat: null, lon: null };
+
+// Get user location
+function getLocation() {
+    if (!navigator.geolocation) {
+        console.log("❌ Location not supported");
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+        (pos) => {
+            userLocation.lat = pos.coords.latitude;
+            userLocation.lon = pos.coords.longitude;
+
+            console.log("✅ LOCATION:", userLocation);
+
+            alert("Location fetched ✅"); // 👈 DEBUG
+        },
+        (err) => {
+            console.log("❌ Location error:", err);
+            alert("Location permission denied ❌");
+        }
+    );
+}
+
+// Call once when page loads
+getLocation();
+
+// =======================
+// PREDICT FUNCTION
+// =======================
+async function predict() {
+    let fileInput = document.getElementById("imageInput");
+    let file = fileInput.files[0];
+
+if (!file) {
+    alert("Please select an image");
+    return;
+}
+
+// Show preview
+let preview = document.getElementById("preview");
+preview.src = URL.createObjectURL(file);
+preview.style.display = "block";
+
+    let formData = new FormData();
+    formData.append("file", file);
+
+    document.getElementById("result").innerText = "Processing...";
+    document.getElementById("chatBox").innerHTML = "";
+
+    let response = await fetch("/predict", {
+        method: "POST",
+        body: formData
+    });
+
+    let data = await response.json();
+
+    if (data.error) {
+        document.getElementById("result").innerText = data.error;
+    } else {
+        detectedDisease = data.disease;
+
+        document.getElementById("result").innerText =
+            "Disease: " + data.disease + " | Confidence: " + data.confidence;
+
+        // Auto welcome message
+       addMessage("ai", `I detected ${data.disease}. Ask me anything about it!`);
+    }
+}
+
+// =======================
+// CHAT FUNCTION
+// =======================
+async function sendMessage() {
+
+    let input = document.getElementById("userInput");
+    let message = input.value.trim();
+
+    if (!message) return;
+
+    if (!detectedDisease) {
+        alert("Please predict disease first!");
+        return;
+    }
+
+    let chatBox = document.getElementById("chatBox");
+
+    // Show user message
+    addMessage("user", message);
+
+    input.value = "";
+
+    // Show loading
+    let loadingDiv = document.createElement("div");
+    loadingDiv.id = "loading";
+    loadingDiv.innerHTML = "<i>AI is typing...</i>";
+    chatBox.appendChild(loadingDiv);
+
+    chatBox.scrollTop = chatBox.scrollHeight;
+
+    let lang = document.getElementById("languageSelect").value;
+
+    let response = await fetch("/chat", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+    disease: detectedDisease,
+    message: message,
+    language: lang,
+    lat: userLocation.lat,
+    lon: userLocation.lon
+})
+    });
+
+    let data = await response.json();
+
+    // Remove loading
+    document.getElementById("loading").remove();
+
+    // Show AI reply
+    if (data.error) {
+    addMessage("ai", "Error: " + data.error);
+} else {
+
+    let en = data.english;
+    let kn = data.kannada;
+
+    let formatted = `
+    <b>🌿 English</b><br>
+    <b>Problem:</b> ${en.problem}<br>
+    <b>Solution:</b> ${en.solution}<br>
+    <b>Watering:</b> ${en.watering}<br>
+    <b>Prevention:</b> ${en.prevention}
+    <hr>
+    <b>🌿 Kannada</b><br>
+    <b>Problem:</b> ${kn.problem}<br>
+    <b>Solution:</b> ${kn.solution}<br>
+    <b>Watering:</b> ${kn.watering}<br>
+    <b>Prevention:</b> ${kn.prevention}
+    `;
+
+    addMessage("ai", formatted);
+
+    lastResponse = `${en.solution}`;
+
+    if (speakEnabled) {
+        speakText(en.solution, "en-US");
+    }
+
+
+// Save last response
+lastResponse = data.response;
+
+// Speak ONLY if enabled
+if (speakEnabled) {
+    if (lang === "kn") {
+        speakText(data.response, "kn-IN");
+    } else {
+        speakText(data.response, "en-US");
+    }
+}
+
+    }
+
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+// =======================
+// ENTER KEY SUPPORT
+// =======================
+document.getElementById("userInput").addEventListener("keypress", function(e) {
+    if (e.key === "Enter") {
+        sendMessage();
+    }
+});
+
+
+function addMessage(sender, text) {
+
+    let chatBox = document.getElementById("chatBox");
+
+    let time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+    let messageHTML = `
+        <div class="message ${sender}">
+            <div>
+                <div class="bubble">${text}</div>
+                <div class="time">${time}</div>
+            </div>
+        </div>
+    `;
+
+    chatBox.innerHTML += messageHTML;
+
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+
+function startVoice() {
+
+    if (!('webkitSpeechRecognition' in window)) {
+        alert("Voice not supported in this browser");
+        return;
+    }
+
+    let recognition = new webkitSpeechRecognition();
+
+    let lang = document.getElementById("languageSelect").value;
+
+if (lang === "kn") {
+    recognition.lang = "kn-IN";
+} else {
+    recognition.lang = "en-US";// default language
+}  
+    recognition.start();
+
+    let input = document.getElementById("userInput");
+
+    recognition.onstart = function() {
+        input.placeholder = "Listening... 🎤";
+    };
+
+    recognition.onresult = function(event) {
+        let transcript = event.results[0][0].transcript;
+        input.value = transcript;
+    };
+
+    recognition.onend = function() {
+        input.placeholder = "Ask something about the disease...";
+    };
+}
+
+function speakText(text, lang="en-US") {
+
+    if (!('speechSynthesis' in window)) {
+        console.log("Speech not supported");
+        return;
+    }
+
+    let speech = new SpeechSynthesisUtterance(text);
+
+    speech.lang = lang;
+    speech.rate = 1;
+    speech.pitch = 1;
+
+    window.speechSynthesis.speak(speech);
+}
+
+function toggleSpeak() {
+    speakEnabled = !speakEnabled;
+
+    let btn = document.getElementById("speakToggle");
+
+    if (speakEnabled) {
+        btn.innerText = "🔊 ON";
+        btn.classList.remove("btn-secondary");
+        btn.classList.add("btn-success");
+    } else {
+        btn.innerText = "🔇 OFF";
+        btn.classList.remove("btn-success");
+        btn.classList.add("btn-secondary");
+    }
+}
+
+function stopSpeak() {
+    window.speechSynthesis.cancel();
+}
+
+function playLast() {
+    if (!lastResponse) {
+        alert("No message to play!");
+        return;
+    }
+
+    let lang = document.getElementById("languageSelect").value;
+
+    if (lang === "kn") {
+        speakText(lastResponse, "kn-IN");
+    } else {
+        speakText(lastResponse, "en-US");
+    }
+}
+
+
+async function getSensorData() {
+    let response = await fetch("/last-iot");
+    let data = await response.json();
+
+    document.getElementById("soilVal").innerText = data.soil;
+    document.getElementById("tempVal").innerText = data.temp + " °C";
+    document.getElementById("humVal").innerText = data.humidity + " %";
+
+    // 🔥 SHOW SOURCE
+    if (!document.getElementById("source")) {
+        let el = document.createElement("div");
+        el.id = "source";
+        document.querySelector(".card").appendChild(el);
+    }
+
+    document.getElementById("source").innerText =
+        data.source === "iot" ? "📡 IoT Data" :
+        data.source === "weather" ? "🌍 Weather Data" :
+        "⚠ Default Data";
+}
+
+setInterval(getSensorData, 3000);
+</script>
+
+</body>
+</html>
